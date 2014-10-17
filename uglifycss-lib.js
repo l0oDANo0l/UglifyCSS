@@ -294,73 +294,86 @@ function processString(content, options) {
         comments.push(token);
         content = content.slice(0, startIndex + 2) + "___PRESERVE_CANDIDATE_COMMENT_" + (comments.length - 1) + "___" + content.slice(endIndex);
         startIndex += 2;
+        
+        // If comments grow too large out of memory errors can occur... process in chunks of 500
+		if (comments.length > 500) {
+			processCommentChunk();
+			comments = [];
+		}
     }
+    processCommentChunk();
+	comments = [];
 
-    // preserve strings so their content doesn't get accidentally minified
-    pattern = /("([^\\"]|\\.|\\)*")|('([^\\']|\\.|\\)*')/g;
-    content = content.replace(pattern, function (token) {
-        quote = token.substring(0, 1);
-        token = token.slice(1, -1);
-        // maybe the string contains a comment-like substring or more? put'em back then
-        if (token.indexOf("___PRESERVE_CANDIDATE_COMMENT_") >= 0) {
-            for (i = 0, len = comments.length; i < len; i += 1) {
-                token = token.replace("___PRESERVE_CANDIDATE_COMMENT_" + i + "___", comments[i]);
-            }
-        }
-        // minify alpha opacity in filter strings
-        token = token.replace(/progid:DXImageTransform.Microsoft.Alpha\(Opacity=/gi, "alpha(opacity=");
-        preservedTokens.push(token);
-        return quote + "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___" + quote;
-    });
+    function processCommentChunk() {
 
-    // strings are safe, now wrestle the comments
-    for (i = 0, len = comments.length; i < len; i += 1) {
-
-        token = comments[i];
-        placeholder = "___PRESERVE_CANDIDATE_COMMENT_" + i + "___";
-
-        // ! in the first position of the comment means preserve
-        // so push to the preserved tokens keeping the !
-        if (token.charAt(0) === "!") {
-            if (options.cuteComments) {
-                preservedTokens.push(token.substring(1));
-            } else if (options.uglyComments) {
-                preservedTokens.push(token.substring(1).replace(/[\r\n]/g, ''));
-            } else {
-                preservedTokens.push(token);
-            }
-            content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
-            continue;
-        }
-
-        // \ in the last position looks like hack for Mac/IE5
-        // shorten that to /*\*/ and the next one to /**/
-        if (token.charAt(token.length - 1) === "\\") {
-            preservedTokens.push("\\");
-            content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
-            i = i + 1; // attn: advancing the loop
-            preservedTokens.push("");
-            content = content.replace(
-                "___PRESERVE_CANDIDATE_COMMENT_" + i + "___",
-                "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___"
-            );
-            continue;
-        }
-
-        // keep empty comments after child selectors (IE7 hack)
-        // e.g. html >/**/ body
-        if (token.length === 0) {
-            startIndex = content.indexOf(placeholder);
-            if (startIndex > 2) {
-                if (content.charAt(startIndex - 3) === '>') {
-                    preservedTokens.push("");
-                    content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
+		var startIndex;
+		
+        // preserve strings so their content doesn't get accidentally minified
+        pattern = /("([^\\"]|\\.|\\)*")|('([^\\']|\\.|\\)*')/g;
+        content = content.replace(pattern, function (token) {
+            quote = token.substring(0, 1);
+            token = token.slice(1, -1);
+            // maybe the string contains a comment-like substring or more? put'em back then
+            if (token.indexOf("___PRESERVE_CANDIDATE_COMMENT_") >= 0) {
+                for (i = 0, len = comments.length; i < len; i += 1) {
+                    token = token.replace("___PRESERVE_CANDIDATE_COMMENT_" + i + "___", comments[i]);
                 }
             }
-        }
+            // minify alpha opacity in filter strings
+            token = token.replace(/progid:DXImageTransform.Microsoft.Alpha\(Opacity=/gi, "alpha(opacity=");
+            preservedTokens.push(token);
+            return quote + "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___" + quote;
+        });
 
-        // in all other cases kill the comment
-        content = content.replace("/*" + placeholder + "*/", "");
+        // strings are safe, now wrestle the comments
+        for (i = 0, len = comments.length; i < len; i += 1) {
+
+            token = comments[i];
+            placeholder = "___PRESERVE_CANDIDATE_COMMENT_" + i + "___";
+
+            // ! in the first position of the comment means preserve
+            // so push to the preserved tokens keeping the !
+            if (token.charAt(0) === "!") {
+                if (options.cuteComments) {
+                    preservedTokens.push(token.substring(1));
+                } else if (options.uglyComments) {
+                    preservedTokens.push(token.substring(1).replace(/[\r\n]/g, ''));
+                } else {
+                    preservedTokens.push(token);
+                }
+                content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
+                continue;
+            }
+
+            // \ in the last position looks like hack for Mac/IE5
+            // shorten that to /*\*/ and the next one to /**/
+            if (token.charAt(token.length - 1) === "\\") {
+                preservedTokens.push("\\");
+                content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
+                i = i + 1; // attn: advancing the loop
+                preservedTokens.push("");
+                content = content.replace(
+                    "___PRESERVE_CANDIDATE_COMMENT_" + i + "___",
+                    "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___"
+                );
+                continue;
+            }
+
+            // keep empty comments after child selectors (IE7 hack)
+            // e.g. html >/**/ body
+            if (token.length === 0) {
+                startIndex = content.indexOf(placeholder);
+                if (startIndex > 2) {
+                    if (content.charAt(startIndex - 3) === '>') {
+                        preservedTokens.push("");
+                        content = content.replace(placeholder,  "___PRESERVED_TOKEN_" + (preservedTokens.length - 1) + "___");
+                    }
+                }
+            }
+
+            // in all other cases kill the comment
+            content = content.replace("/*" + placeholder + "*/", "");
+        }
     }
 
     if (options.expandVars) {
